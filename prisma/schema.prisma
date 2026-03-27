@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Match {
+  id          String   @id @default(cuid())
+  externalId  String?  @unique
+  homeTeam    String
+  awayTeam    String
+  sport       String   // football, handball, basketball, nfl
+  competition String
+  kickoff     DateTime
+  status      String   @default("scheduled") // scheduled, live, finished
+  homeScore   Int?
+  awayScore   Int?
+  venue       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  odds     Odds[]
+  analysis Analysis?
+  news     MatchNews[]
+
+  @@index([sport, kickoff])
+  @@index([status])
+}
+
+model Odds {
+  id         String   @id @default(cuid())
+  matchId    String
+  bookmaker  String
+  homeOdds   Float
+  drawOdds   Float?
+  awayOdds   Float
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, bookmaker])
+  @@index([matchId])
+}
+
+model Analysis {
+  id               String   @id @default(cuid())
+  matchId          String   @unique
+  homeWinProb      Float
+  drawProb         Float?
+  awayWinProb      Float
+  valueBet         String?  // "home", "draw", "away", or null
+  confidenceScore  Int      // 1-5
+  summary          String
+  isValueBet       Boolean  @default(false)
+  kellyHome        Float?
+  kellyAway        Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+}
+
+model NewsArticle {
+  id             String   @id @default(cuid())
+  externalId     String?  @unique
+  title          String
+  description    String?
+  url            String
+  source         String
+  publishedAt    DateTime
+  hasInjuryInfo  Boolean  @default(false)
+  injuryPlayers  String?  // JSON array of player names
+  createdAt      DateTime @default(now())
+
+  matchLinks MatchNews[]
+
+  @@index([publishedAt])
+  @@index([hasInjuryInfo])
+}
+
+model MatchNews {
+  matchId    String
+  articleId  String
+
+  match   Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  article NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([matchId, articleId])
+}
+
+model TeamStats {
+  id           String   @id @default(cuid())
+  teamId       String   @unique
+  teamName     String
+  sport        String
+  homeWins     Int      @default(0)
+  homeLosses   Int      @default(0)
+  homeDraws    Int      @default(0)
+  awayWins     Int      @default(0)
+  awayLosses   Int      @default(0)
+  awayDraws    Int      @default(0)
+  form         String   @default("")
+  goalsFor     Float    @default(0)
+  goalsAgainst Float    @default(0)
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  @@index([sport])
+}
+
+model CacheEntry {
+  id        String   @id
+  data      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
