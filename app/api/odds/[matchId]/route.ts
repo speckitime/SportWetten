@@ -39,15 +39,14 @@ export async function GET(
   // Find best odds
   const bestHomeOdds = Math.max(...odds.map((o) => o.homeOdds));
   const bestAwayOdds = Math.max(...odds.map((o) => o.awayOdds));
-  const bestDrawOdds = Math.max(
-    ...odds.filter((o) => o.drawOdds).map((o) => o.drawOdds!)
-  );
+  const drawOddsList = odds.map((o) => o.drawOdds).filter(Boolean) as number[];
+  const bestDrawOdds = drawOddsList.length > 0 ? Math.max(...drawOddsList) : null;
 
   return NextResponse.json({
     odds: enrichedOdds,
     bestOdds: {
       home: bestHomeOdds,
-      draw: bestDrawOdds || null,
+      draw: bestDrawOdds,
       away: bestAwayOdds,
     },
   });

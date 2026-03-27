@@ -127,8 +127,8 @@ export async function syncNewsAndInjuries(): Promise<void> {
                 : null,
             },
           });
-        } catch {
-          // Skip duplicate articles
+        } catch (error) {
+          console.error(`[DataSync] Failed to upsert article ${article.url}:`, error);
         }
       }
     }
