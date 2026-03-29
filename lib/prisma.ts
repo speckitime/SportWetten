@@ -10,7 +10,7 @@ function createPrismaClient(): PrismaClient {
   const dbPath = process.env.DATABASE_URL?.replace("file:", "") || "./dev.db";
   const resolvedPath = path.isAbsolute(dbPath)
     ? dbPath
-    : path.join(process.cwd(), "prisma", dbPath.replace("./", ""));
+    : path.resolve(process.cwd(), dbPath);
 
   const adapter = new PrismaBetterSqlite3({ url: resolvedPath });
 
