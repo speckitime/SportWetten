@@ -31,23 +31,30 @@ interface Outcome {
   price: number;
 }
 
-// Map sport names to The Odds API sport keys
+// Map sport names to The Odds API sport keys (only confirmed free-tier keys)
 const SPORT_KEYS: Record<string, string[]> = {
   football: ["soccer_germany_bundesliga", "soccer_uefa_champs_league", "soccer_epl"],
-  handball: ["handball_germany_hbl"],
-  basketball: ["basketball_euroleague", "basketball_nbl"],
+  handball: [], // Not available in The Odds API free tier - uses mock data
+  basketball: ["basketball_nba"], // euroleague not in free tier
   nfl: ["americanfootball_nfl"],
 };
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function fetchOdds(sport: string): Promise<OddsGame[]> {
   if (!API_KEY || API_KEY === "your_key_here") {
     return getMockOdds(sport);
   }
 
-  const sportKeys = SPORT_KEYS[sport] || SPORT_KEYS.football;
+  const sportKeys = SPORT_KEYS[sport] || [];
+  if (sportKeys.length === 0) return getMockOdds(sport);
+
   const results: OddsGame[] = [];
 
-  for (const sportKey of sportKeys) {
+  for (let i = 0; i < sportKeys.length; i++) {
+    const sportKey = sportKeys[i];
+    // Pause between requests to avoid 429 rate limiting (free tier: 10 req/min)
+    if (i > 0) await sleep(7000);
     try {
       const response = await axios.get(`${BASE_URL}/sports/${sportKey}/odds`, {
         params: {
@@ -60,8 +67,17 @@ export async function fetchOdds(sport: string): Promise<OddsGame[]> {
         timeout: 10000,
       });
       results.push(...response.data);
-    } catch (error) {
-      console.error(`Failed to fetch odds for ${sportKey}:`, error);
+    } catch (error: unknown) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        (error as { response?: { status?: number } }).response?.status === 429
+      ) {
+        console.warn(`[OddsAPI] Rate limited on ${sportKey}, skipping.`);
+      } else {
+        console.error(`[OddsAPI] Failed to fetch odds for ${sportKey}:`, error);
+      }
     }
   }
 
@@ -69,11 +85,12 @@ export async function fetchOdds(sport: string): Promise<OddsGame[]> {
 }
 
 export async function fetchAllSportsOdds(): Promise<OddsGame[]> {
-  const sports = Object.keys(SPORT_KEYS);
+  const sports = Object.keys(SPORT_KEYS).filter((s) => SPORT_KEYS[s].length > 0);
   const allOdds: OddsGame[] = [];
 
-  for (const sport of sports) {
-    const odds = await fetchOdds(sport);
+  for (let i = 0; i < sports.length; i++) {
+    if (i > 0) await sleep(8000); // Pause zwischen Sportarten
+    const odds = await fetchOdds(sports[i]);
     allOdds.push(...odds);
   }
 
