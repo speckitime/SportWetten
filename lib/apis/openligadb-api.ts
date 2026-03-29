@@ -107,6 +107,17 @@ export async function fetchUpcomingHBL(): Promise<OpenLigaMatch[]> {
   return matches.filter((m) => !m.matchIsFinished || new Date(m.matchDateTime) >= cutoff);
 }
 
+export async function fetchUpcomingBBL(): Promise<OpenLigaMatch[]> {
+  // Basketball Bundesliga: shortcut "bbl", fallback "bbl2024" or "bbl1"
+  let matches = await fetchUpcomingMatches("bbl");
+  if (matches.length === 0) {
+    console.log("[OpenLigaDB] BBL returned 0 matches, trying 'bbl1'...");
+    matches = await fetchUpcomingMatches("bbl1");
+  }
+  const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return matches.filter((m) => !m.matchIsFinished || new Date(m.matchDateTime) >= cutoff);
+}
+
 export async function fetchLiveBundesliga(): Promise<OpenLigaMatch[]> {
   const matches = await fetchCurrentRound("bl1");
   const now = new Date();
@@ -124,6 +135,62 @@ function getCurrentSeason(): string {
   const month = now.getMonth() + 1;
   return month >= 7 ? String(year) : String(year - 1);
 }
+
+// ─── BBL: Basketball Bundesliga ─────────────────────────────────────────────
+
+const BBL_TEAM_STRENGTH: Record<string, number> = {
+  "FC Bayern München Basketball": 92,
+  "Bayern Basketball": 92,
+  "Alba Berlin": 88,
+  "MHP Riesen Ludwigsburg": 82,
+  "Ratiopharm Ulm": 80,
+  "Brose Bamberg": 78,
+  "EWE Baskets Oldenburg": 76,
+  "Telekom Baskets Bonn": 75,
+  "SYNTAINICS MBC": 70,
+  "Syntainics MBC": 70,
+  "FRAPORT SKYLINERS Frankfurt": 72,
+  "Skyliners Frankfurt": 72,
+  "Löwen Braunschweig": 74,
+  "Niners Chemnitz": 68,
+  "Walter Tigers Tübingen": 65,
+  "Hakro Merlins Crailsheim": 67,
+  "Hamburg Towers": 73,
+  "BG Göttingen": 69,
+  "Kirchheim Knights": 60,
+};
+
+function getBBLTeamStrength(name: string): number {
+  if (BBL_TEAM_STRENGTH[name]) return BBL_TEAM_STRENGTH[name];
+  for (const [key, val] of Object.entries(BBL_TEAM_STRENGTH)) {
+    const keyword = key.split(" ").find((w) => w.length > 4);
+    if (keyword && name.includes(keyword)) return val;
+  }
+  return 70;
+}
+
+export function estimateBBLOdds(
+  homeTeam: string,
+  awayTeam: string
+): { homeOdds: number; awayOdds: number } {
+  const homeStr = getBBLTeamStrength(homeTeam) + 5; // Heimvorteil Basketball
+  const awayStr = getBBLTeamStrength(awayTeam);
+  const total = homeStr + awayStr;
+
+  const homeProb = homeStr / total;
+  const awayProb = awayStr / total;
+  const vig = 1.08;
+
+  const homeOdds = Math.round((1 / (homeProb / vig)) * 100) / 100;
+  const awayOdds = Math.round((1 / (awayProb / vig)) * 100) / 100;
+
+  return {
+    homeOdds: Math.min(Math.max(homeOdds, 1.15), 4.5),
+    awayOdds: Math.min(Math.max(awayOdds, 1.15), 5.0),
+  };
+}
+
+// ─── HBL: Handball Bundesliga ────────────────────────────────────────────────
 
 // Generate deterministic estimated odds for HBL matches (no real odds source in free tier)
 const HBL_TEAM_STRENGTH: Record<string, number> = {
