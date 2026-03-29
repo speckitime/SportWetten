@@ -1,9 +1,12 @@
 "use client";
 
 import { useKombi } from "@/lib/kombi-context";
+import TipicoButton from "@/components/TipicoButton";
 
 interface TippEmpfehlungProps {
   matchId: string;
+  sport: string;
+  competition: string;
   homeTeam: string;
   awayTeam: string;
   analysis: {
@@ -25,6 +28,8 @@ interface TippEmpfehlungProps {
 
 export default function TippEmpfehlung({
   matchId,
+  sport,
+  competition,
   homeTeam,
   awayTeam,
   analysis,
@@ -153,23 +158,37 @@ export default function TippEmpfehlung({
         )}
       </div>
 
-      {/* Add to Kombi */}
+      {/* Actions: Kombi + Tipico */}
       {recommended.odds && (
-        <div className="border-t border-gray-700 pt-3 flex items-center justify-between">
+        <div className="border-t border-gray-700 pt-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={handleAddToKombi}
+              className={`text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                alreadyInKombi
+                  ? "bg-gray-600 text-gray-400 cursor-default"
+                  : "bg-orange-600 hover:bg-orange-500 text-white"
+              }`}
+              disabled={alreadyInKombi}
+            >
+              {alreadyInKombi ? "✓ Im Kombi" : "+ Zum Kombi"}
+            </button>
+
+            <TipicoButton
+              sport={sport}
+              competition={competition}
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              tipp={{
+                selection: recommended.key,
+                label: recommended.label,
+                odds: recommended.odds,
+              }}
+            />
+          </div>
           <p className="text-xs text-gray-500">
             ⚠️ Analyse auf Basis statistischer Daten. Kein Tipp-Versprechen. 18+
           </p>
-          <button
-            onClick={handleAddToKombi}
-            className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${
-              alreadyInKombi
-                ? "bg-gray-600 text-gray-400 cursor-default"
-                : "bg-orange-600 hover:bg-orange-500 text-white"
-            }`}
-            disabled={alreadyInKombi}
-          >
-            {alreadyInKombi ? "✓ Im Kombi" : "+ Zum Kombi"}
-          </button>
         </div>
       )}
     </div>
