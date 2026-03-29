@@ -119,3 +119,20 @@ model CacheEntry {
 
   @@index([expiresAt])
 }
+
+model InjuryReport {
+  id          String   @id @default(cuid())
+  teamName    String
+  playerName  String
+  injury      String   // Beschreibung der Verletzung
+  status      String   // "aus" | "fraglich" | "training"
+  sport       String
+  returnDate  String?
+  source      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([teamName])
+  @@index([sport])
+  @@unique([teamName, playerName])
+}
