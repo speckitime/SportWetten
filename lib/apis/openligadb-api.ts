@@ -4,7 +4,7 @@ const BASE_URL = "https://api.openligadb.de";
 
 export interface OpenLigaMatch {
   matchID: number;
-  matchDateTime: string; // "2025-08-22T18:30:00"
+  matchDateTime: string;
   leagueName: string;
   leagueShortcut: string;
   leagueSeason: string;
@@ -20,235 +20,185 @@ export interface OpenLigaMatch {
   }>;
 }
 
-// Fetch current matchday matches for a league
-async function fetchCurrentRound(leagueShortcut: string): Promise<OpenLigaMatch[]> {
-  try {
-    const response = await axios.get(`${BASE_URL}/getmatchdata/${leagueShortcut}`, {
-      timeout: 15000,
-      headers: { Accept: "application/json" },
-    });
-    const data = response.data as OpenLigaMatch[];
-    console.log(`[OpenLigaDB] ${leagueShortcut} current round: ${data.length} matches`);
-    return data;
-  } catch (error) {
-    console.error(`[OpenLigaDB] Failed to fetch current round for ${leagueShortcut}:`, error);
-    return [];
-  }
-}
+const axiosOpts = { timeout: 15000, headers: { Accept: "application/json" } };
 
-// Fetch a specific round by number
-async function fetchRound(leagueShortcut: string, season: string, round: number): Promise<OpenLigaMatch[]> {
+async function get<T>(url: string): Promise<T | null> {
   try {
-    const response = await axios.get(
-      `${BASE_URL}/getmatchdata/${leagueShortcut}/${season}/${round}`,
-      { timeout: 15000, headers: { Accept: "application/json" } }
-    );
-    return response.data as OpenLigaMatch[];
-  } catch {
-    return [];
-  }
-}
-
-// Get current round number
-async function getCurrentRoundNumber(leagueShortcut: string): Promise<number | null> {
-  try {
-    const res = await axios.get(`${BASE_URL}/getcurrentround/${leagueShortcut}`, {
-      timeout: 10000,
-      headers: { Accept: "application/json" },
-    });
-    const roundId = (res.data as { groupOrderID: number }).groupOrderID;
-    console.log(`[OpenLigaDB] ${leagueShortcut} current round: ${roundId}`);
-    return roundId;
-  } catch {
+    const res = await axios.get(url, axiosOpts);
+    return res.data as T;
+  } catch (err) {
+    console.error(`[OpenLigaDB] GET ${url} failed:`, (err as Error).message);
     return null;
   }
 }
 
-// Fetch current + next matchday for a league
-async function fetchUpcomingMatches(leagueShortcut: string): Promise<OpenLigaMatch[]> {
+async function fetchRoundByNumber(
+  shortcut: string,
+  season: string,
+  round: number
+): Promise<OpenLigaMatch[]> {
+  const data = await get<OpenLigaMatch[]>(
+    `${BASE_URL}/getmatchdata/${shortcut}/${season}/${round}`
+  );
+  return data ?? [];
+}
+
+async function getCurrentRound(shortcut: string): Promise<{ matches: OpenLigaMatch[]; roundId: number | null }> {
+  const matches = await get<OpenLigaMatch[]>(`${BASE_URL}/getmatchdata/${shortcut}`);
+  const roundData = await get<{ groupOrderID: number }>(`${BASE_URL}/getcurrentround/${shortcut}`);
+  return {
+    matches: matches ?? [],
+    roundId: roundData?.groupOrderID ?? null,
+  };
+}
+
+/** Fetch current + next N matchdays, return all non-finished future matches */
+async function fetchUpcoming(shortcut: string, extraRounds = 2): Promise<OpenLigaMatch[]> {
   const season = getCurrentSeason();
+  const { matches: current, roundId } = await getCurrentRound(shortcut);
 
-  // Get current round matches
-  const current = await fetchCurrentRound(leagueShortcut);
+  const futures: OpenLigaMatch[][] = [current];
 
-  // Also try to get next round
-  const roundId = await getCurrentRoundNumber(leagueShortcut);
-  let next: OpenLigaMatch[] = [];
   if (roundId !== null) {
-    next = await fetchRound(leagueShortcut, season, roundId + 1);
+    const fetches = Array.from({ length: extraRounds }, (_, i) =>
+      fetchRoundByNumber(shortcut, season, roundId + i + 1)
+    );
+    const results = await Promise.all(fetches);
+    futures.push(...results);
   }
 
-  const all = [...current, ...next];
-
-  // Deduplicate by matchID
+  // Flatten + deduplicate
   const seen = new Set<number>();
-  return all.filter((m) => {
-    if (seen.has(m.matchID)) return false;
-    seen.add(m.matchID);
-    return true;
-  });
+  const all: OpenLigaMatch[] = [];
+  for (const batch of futures) {
+    for (const m of batch) {
+      if (!seen.has(m.matchID)) {
+        seen.add(m.matchID);
+        all.push(m);
+      }
+    }
+  }
+
+  console.log(`[OpenLigaDB] ${shortcut}: ${all.length} total, ${all.filter(m => !m.matchIsFinished).length} upcoming`);
+
+  // Keep scheduled/live matches; also keep recently finished (within 2h) for live scores
+  const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  return all.filter(
+    (m) => !m.matchIsFinished || new Date(m.matchDateTime) >= cutoff
+  );
+}
+
+async function tryShortcuts(shortcuts: string[], extraRounds = 2): Promise<OpenLigaMatch[]> {
+  for (const s of shortcuts) {
+    const result = await fetchUpcoming(s, extraRounds);
+    if (result.length > 0) return result;
+    console.log(`[OpenLigaDB] ${s} returned 0, trying next shortcut...`);
+  }
+  return [];
 }
 
 export async function fetchUpcomingBundesliga(): Promise<OpenLigaMatch[]> {
-  const matches = await fetchUpcomingMatches("bl1");
-  // Include today's games (even if kickoff was recent) + scheduled
-  const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000); // 3h back
-  return matches.filter((m) => !m.matchIsFinished || new Date(m.matchDateTime) >= cutoff);
+  return tryShortcuts(["bl1"]);
 }
 
 export async function fetchUpcomingHBL(): Promise<OpenLigaMatch[]> {
-  // Try primary shortcut "hbl", fallback to "hbl1"
-  let matches = await fetchUpcomingMatches("hbl");
-  if (matches.length === 0) {
-    console.log("[OpenLigaDB] HBL returned 0 matches, trying 'hbl1'...");
-    matches = await fetchUpcomingMatches("hbl1");
-  }
-  const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  return matches.filter((m) => !m.matchIsFinished || new Date(m.matchDateTime) >= cutoff);
+  return tryShortcuts(["hbl", "hbl1", "hblm"]);
 }
 
 export async function fetchUpcomingBBL(): Promise<OpenLigaMatch[]> {
-  // Basketball Bundesliga: shortcut "bbl", fallback "bbl2024" or "bbl1"
-  let matches = await fetchUpcomingMatches("bbl");
-  if (matches.length === 0) {
-    console.log("[OpenLigaDB] BBL returned 0 matches, trying 'bbl1'...");
-    matches = await fetchUpcomingMatches("bbl1");
-  }
-  const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  return matches.filter((m) => !m.matchIsFinished || new Date(m.matchDateTime) >= cutoff);
+  return tryShortcuts(["bbl", "bbl1", "bbl2024"]);
 }
 
 export async function fetchLiveBundesliga(): Promise<OpenLigaMatch[]> {
-  const matches = await fetchCurrentRound("bl1");
+  const data = await get<OpenLigaMatch[]>(`${BASE_URL}/getmatchdata/bl1`);
+  if (!data) return [];
   const now = new Date();
-  return matches.filter((m) => {
+  return data.filter((m) => {
     const kick = new Date(m.matchDateTime);
     const diff = (now.getTime() - kick.getTime()) / 60000;
     return !m.matchIsFinished && diff >= 0 && diff < 120;
   });
 }
 
-// Current season: 2025 for the 2025/26 season (we're in March 2026)
 function getCurrentSeason(): string {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  return month >= 7 ? String(year) : String(year - 1);
+  return now.getMonth() + 1 >= 7 ? String(now.getFullYear()) : String(now.getFullYear() - 1);
 }
 
-// ─── BBL: Basketball Bundesliga ─────────────────────────────────────────────
+// ─── BBL Estimated odds ──────────────────────────────────────────────────────
 
-const BBL_TEAM_STRENGTH: Record<string, number> = {
-  "FC Bayern München Basketball": 92,
-  "Bayern Basketball": 92,
+const BBL_STRENGTH: Record<string, number> = {
+  "FC Bayern München Basketball": 92, "Bayern Basketball": 92,
   "Alba Berlin": 88,
   "MHP Riesen Ludwigsburg": 82,
   "Ratiopharm Ulm": 80,
   "Brose Bamberg": 78,
   "EWE Baskets Oldenburg": 76,
   "Telekom Baskets Bonn": 75,
-  "SYNTAINICS MBC": 70,
-  "Syntainics MBC": 70,
-  "FRAPORT SKYLINERS Frankfurt": 72,
-  "Skyliners Frankfurt": 72,
   "Löwen Braunschweig": 74,
-  "Niners Chemnitz": 68,
-  "Walter Tigers Tübingen": 65,
-  "Hakro Merlins Crailsheim": 67,
   "Hamburg Towers": 73,
+  "FRAPORT SKYLINERS Frankfurt": 72, "Skyliners Frankfurt": 72,
+  "SYNTAINICS MBC": 70, "Syntainics MBC": 70,
   "BG Göttingen": 69,
+  "Niners Chemnitz": 68,
+  "Hakro Merlins Crailsheim": 67,
+  "Walter Tigers Tübingen": 65,
   "Kirchheim Knights": 60,
 };
 
-function getBBLTeamStrength(name: string): number {
-  if (BBL_TEAM_STRENGTH[name]) return BBL_TEAM_STRENGTH[name];
-  for (const [key, val] of Object.entries(BBL_TEAM_STRENGTH)) {
-    const keyword = key.split(" ").find((w) => w.length > 4);
-    if (keyword && name.includes(keyword)) return val;
+function bblStrength(name: string): number {
+  if (BBL_STRENGTH[name]) return BBL_STRENGTH[name];
+  for (const [key, val] of Object.entries(BBL_STRENGTH)) {
+    const word = key.split(" ").find((w) => w.length > 4);
+    if (word && name.includes(word)) return val;
   }
   return 70;
 }
 
-export function estimateBBLOdds(
-  homeTeam: string,
-  awayTeam: string
-): { homeOdds: number; awayOdds: number } {
-  const homeStr = getBBLTeamStrength(homeTeam) + 5; // Heimvorteil Basketball
-  const awayStr = getBBLTeamStrength(awayTeam);
-  const total = homeStr + awayStr;
-
-  const homeProb = homeStr / total;
-  const awayProb = awayStr / total;
+export function estimateBBLOdds(home: string, away: string): { homeOdds: number; awayOdds: number } {
+  const hs = bblStrength(home) + 5;
+  const as_ = bblStrength(away);
+  const total = hs + as_;
   const vig = 1.08;
-
-  const homeOdds = Math.round((1 / (homeProb / vig)) * 100) / 100;
-  const awayOdds = Math.round((1 / (awayProb / vig)) * 100) / 100;
-
   return {
-    homeOdds: Math.min(Math.max(homeOdds, 1.15), 4.5),
-    awayOdds: Math.min(Math.max(awayOdds, 1.15), 5.0),
+    homeOdds: +Math.min(Math.max((1 / ((hs / total) / vig)), 1.15), 4.5).toFixed(2),
+    awayOdds: +Math.min(Math.max((1 / ((as_ / total) / vig)), 1.15), 5.0).toFixed(2),
   };
 }
 
-// ─── HBL: Handball Bundesliga ────────────────────────────────────────────────
+// ─── HBL Estimated odds ──────────────────────────────────────────────────────
 
-// Generate deterministic estimated odds for HBL matches (no real odds source in free tier)
-const HBL_TEAM_STRENGTH: Record<string, number> = {
-  "THW Kiel": 90,
-  "SG Flensburg-Handewitt": 88,
-  "SC Magdeburg": 87,
-  "Rhein-Neckar Löwen": 82,
-  "MT Melsungen": 80,
-  "TSV Hannover-Burgdorf": 75,
-  "Füchse Berlin": 77,
-  "HSG Wetzlar": 72,
-  "TBV Lemgo Lippe": 70,
-  "VfL Gummersbach": 68,
-  "TSV GWD Minden": 65,
-  "HC Erlangen": 68,
-  "HBW Balingen-Weilstetten": 63,
-  "Bergischer HC": 66,
-  "FA Göppingen": 67,
-  "Frisch Auf Göppingen": 67,
-  "TVB Stuttgart": 66,
-  "SC DHfK Leipzig": 72,
-  "TSV Eisenach": 62,
-  "HSC 2000 Coburg": 61,
-  "VfL Lübeck-Schwartau": 60,
-  "Tusem Essen": 63,
-  "SG BBM Bietigheim": 65,
-  "HC Oppenau/Backnang": 60,
+const HBL_STRENGTH: Record<string, number> = {
+  "THW Kiel": 90, "SG Flensburg-Handewitt": 88, "SC Magdeburg": 87,
+  "Rhein-Neckar Löwen": 82, "MT Melsungen": 80, "Füchse Berlin": 77,
+  "TSV Hannover-Burgdorf": 75, "HSG Wetzlar": 72, "SC DHfK Leipzig": 72,
+  "TBV Lemgo Lippe": 70, "VfL Gummersbach": 68, "HC Erlangen": 68,
+  "FA Göppingen": 67, "Frisch Auf Göppingen": 67, "TVB Stuttgart": 66,
+  "Bergischer HC": 66, "HBW Balingen-Weilstetten": 63, "TSV GWD Minden": 65,
+  "SG BBM Bietigheim": 65, "Tusem Essen": 63, "HSC 2000 Coburg": 61,
+  "TSV Eisenach": 62, "VfL Lübeck-Schwartau": 60, "HC Oppenau/Backnang": 60,
   "TV Großwallstadt": 59,
 };
 
-function getTeamStrength(name: string): number {
-  if (HBL_TEAM_STRENGTH[name]) return HBL_TEAM_STRENGTH[name];
-  for (const [key, val] of Object.entries(HBL_TEAM_STRENGTH)) {
-    if (name.includes(key.split(" ")[1] ?? key) || key.includes(name.split(" ")[0])) return val;
+function hblStrength(name: string): number {
+  if (HBL_STRENGTH[name]) return HBL_STRENGTH[name];
+  for (const [key, val] of Object.entries(HBL_STRENGTH)) {
+    const word = key.split(" ").find((w) => w.length > 4);
+    if (word && name.includes(word)) return val;
   }
   return 68;
 }
 
-export function estimateHBLOdds(
-  homeTeam: string,
-  awayTeam: string
-): { homeOdds: number; drawOdds: number; awayOdds: number } {
-  const homeStr = getTeamStrength(homeTeam) + 8; // Heimvorteil
-  const awayStr = getTeamStrength(awayTeam);
-  const total = homeStr + awayStr;
-
-  const homeProb = (homeStr / total) * 0.95;
-  const awayProb = (awayStr / total) * 0.95;
-  const drawProb = 0.05;
-
+export function estimateHBLOdds(home: string, away: string): { homeOdds: number; drawOdds: number; awayOdds: number } {
+  const hs = hblStrength(home) + 8;
+  const as_ = hblStrength(away);
+  const total = hs + as_;
+  const homeProb = (hs / total) * 0.95;
+  const awayProb = (as_ / total) * 0.95;
   const vig = 1.10;
-  const homeOdds = Math.round((1 / (homeProb / vig)) * 100) / 100;
-  const awayOdds = Math.round((1 / (awayProb / vig)) * 100) / 100;
-  const drawOdds = Math.round((1 / (drawProb / vig)) * 100) / 100;
-
   return {
-    homeOdds: Math.min(Math.max(homeOdds, 1.20), 5.0),
-    drawOdds: Math.min(Math.max(drawOdds, 14.0), 30.0),
-    awayOdds: Math.min(Math.max(awayOdds, 1.20), 6.0),
+    homeOdds: +Math.min(Math.max(1 / (homeProb / vig), 1.20), 5.0).toFixed(2),
+    drawOdds: +Math.min(Math.max(1 / (0.05 / vig), 14.0), 30.0).toFixed(2),
+    awayOdds: +Math.min(Math.max(1 / (awayProb / vig), 1.20), 6.0).toFixed(2),
   };
 }
