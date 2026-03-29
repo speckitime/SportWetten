@@ -4,13 +4,14 @@ import { useEffect, useState, useCallback } from "react";
 import MatchCard from "@/components/MatchCard";
 import SportFilter from "@/components/SportFilter";
 import DateSelector from "@/components/DateSelector";
+import TopTipps from "@/components/TopTipps";
 import { MatchWithOdds } from "@/lib/types";
 
 export default function DashboardClient() {
   const [matches, setMatches] = useState<MatchWithOdds[]>([]);
   const [loading, setLoading] = useState(true);
   const [sport, setSport] = useState("all");
-  const [date, setDate] = useState("today");
+  const [date, setDate] = useState("week"); // Default: diese Woche
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string>("");
 
@@ -87,8 +88,11 @@ export default function DashboardClient() {
         </button>
       </div>
 
+      {/* ===== TOP TIPPS ===== */}
+      <TopTipps />
+
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <SportFilter selected={sport} onChange={setSport} />
         <DateSelector selected={date} onChange={setDate} />
       </div>
@@ -99,14 +103,11 @@ export default function DashboardClient() {
         Bitte verantwortungsvoll handeln. 18+
       </div>
 
-      {/* Content */}
+      {/* Match list by sport */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(6)].map((_, i) => (
-            <div
-              key={i}
-              className="bg-gray-800 rounded-lg h-48 animate-pulse border border-gray-700"
-            />
+            <div key={i} className="bg-gray-800 rounded-lg h-48 animate-pulse border border-gray-700" />
           ))}
         </div>
       ) : matches.length === 0 ? (

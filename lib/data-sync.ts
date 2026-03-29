@@ -11,7 +11,9 @@ const SPORT_MAP: Record<string, string> = {
   soccer_epl: "football",
   handball_germany_hbl: "handball",
   basketball_euroleague: "basketball",
+  basketball_germany_bbl: "basketball",
   basketball_nbl: "basketball",
+  basketball_nba: "basketball",
   americanfootball_nfl: "nfl",
 };
 
