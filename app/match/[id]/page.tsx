@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import OddsTable from "@/components/OddsTable";
 import AnalysisChart from "@/components/AnalysisChart";
 import NewsWidget from "@/components/NewsWidget";
+import TippEmpfehlung from "@/components/TippEmpfehlung";
+import InjuryWidget from "@/components/InjuryWidget";
 import { SPORT_LABELS } from "@/lib/types";
 
 interface PageProps {
@@ -29,12 +31,20 @@ export default async function MatchPage({ params }: PageProps) {
 
   if (!match) notFound();
 
-  const homeStats = await prisma.teamStats.findUnique({
-    where: { teamId: match.homeTeam.toLowerCase().replace(/\s+/g, "-") },
-  });
-  const awayStats = await prisma.teamStats.findUnique({
-    where: { teamId: match.awayTeam.toLowerCase().replace(/\s+/g, "-") },
-  });
+  const [homeStats, awayStats, homeInjuries, awayInjuries] = await Promise.all([
+    prisma.teamStats.findUnique({
+      where: { teamId: match.homeTeam.toLowerCase().replace(/\s+/g, "-") },
+    }),
+    prisma.teamStats.findUnique({
+      where: { teamId: match.awayTeam.toLowerCase().replace(/\s+/g, "-") },
+    }),
+    prisma.injuryReport.findMany({
+      where: { teamName: { contains: match.homeTeam.split(" ")[0] } },
+    }),
+    prisma.injuryReport.findMany({
+      where: { teamName: { contains: match.awayTeam.split(" ")[0] } },
+    }),
+  ]);
 
   const articles = match.news.map((n) => n.article);
   const kickoffDate = new Date(match.kickoff);
@@ -42,14 +52,11 @@ export default async function MatchPage({ params }: PageProps) {
   const isFinished = match.status === "finished";
 
   // Best odds
-  const bestHomeOdds = match.odds.length > 0
-    ? Math.max(...match.odds.map((o) => o.homeOdds))
-    : null;
-  const bestAwayOdds = match.odds.length > 0
-    ? Math.max(...match.odds.map((o) => o.awayOdds))
-    : null;
+  const bestHomeOdds = match.odds.length > 0 ? Math.max(...match.odds.map((o) => o.homeOdds)) : null;
+  const bestAwayOdds = match.odds.length > 0 ? Math.max(...match.odds.map((o) => o.awayOdds)) : null;
+  const drawOddsArr = match.odds.filter((o) => o.drawOdds).map((o) => o.drawOdds as number);
+  const bestDrawOdds = drawOddsArr.length > 0 ? Math.max(...drawOddsArr) : null;
 
-  // Tipico URL (search link, no auto-betting)
   const tipicoUrl = `https://www.tipico.de/de/live-wetten/`;
 
   return (
@@ -138,13 +145,11 @@ export default async function MatchPage({ params }: PageProps) {
                 {bestHomeOdds.toFixed(2)}
               </div>
             </div>
-            {match.odds.some((o) => o.drawOdds) && (
+            {bestDrawOdds && (
               <div className="bg-gray-700 rounded-lg px-4 py-2 text-center">
                 <div className="text-xs text-gray-400">Beste X-Quote</div>
                 <div className="text-yellow-400 font-bold text-lg">
-                  {Math.max(
-                    ...match.odds.filter((o) => o.drawOdds).map((o) => o.drawOdds!)
-                  ).toFixed(2)}
+                  {bestDrawOdds.toFixed(2)}
                 </div>
               </div>
             )}
@@ -158,11 +163,61 @@ export default async function MatchPage({ params }: PageProps) {
         )}
       </div>
 
-      {/* Analysis */}
+      {/* ===== TIPP-EMPFEHLUNG (prominent) ===== */}
+      {match.analysis && !isFinished && (
+        <TippEmpfehlung
+          matchId={match.id}
+          homeTeam={match.homeTeam}
+          awayTeam={match.awayTeam}
+          analysis={{
+            homeWinProb: match.analysis.homeWinProb,
+            drawProb: match.analysis.drawProb,
+            awayWinProb: match.analysis.awayWinProb,
+            valueBet: match.analysis.valueBet,
+            confidenceScore: match.analysis.confidenceScore,
+            isValueBet: match.analysis.isValueBet,
+            kellyHome: match.analysis.kellyHome,
+            kellyAway: match.analysis.kellyAway,
+          }}
+          bestOdds={{
+            home: bestHomeOdds,
+            draw: bestDrawOdds,
+            away: bestAwayOdds,
+          }}
+        />
+      )}
+
+      {/* ===== VERLETZUNGSREPORT ===== */}
+      <InjuryWidget
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
+        preloaded={{
+          home: homeInjuries.map((i) => ({
+            id: i.id,
+            playerName: i.playerName,
+            teamName: i.teamName,
+            injury: i.injury,
+            status: i.status,
+            returnDate: i.returnDate,
+            source: i.source,
+          })),
+          away: awayInjuries.map((i) => ({
+            id: i.id,
+            playerName: i.playerName,
+            teamName: i.teamName,
+            injury: i.injury,
+            status: i.status,
+            returnDate: i.returnDate,
+            source: i.source,
+          })),
+        }}
+      />
+
+      {/* Analysis charts */}
       {match.analysis && (
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Analyse</h2>
+            <h2 className="text-lg font-semibold text-white">Detailanalyse</h2>
             <div className="flex items-center gap-2">
               <div className="flex gap-0.5">
                 {[1, 2, 3, 4, 5].map((s) => (
@@ -178,21 +233,6 @@ export default async function MatchPage({ params }: PageProps) {
                   </span>
                 ))}
               </div>
-              {match.analysis.isValueBet && (
-                <span className="text-xs bg-green-800 text-green-300 px-2 py-0.5 rounded-full font-medium">
-                  Value Bet
-                </span>
-              )}
-              {match.analysis.valueBet && (
-                <span className="text-xs bg-blue-800 text-blue-300 px-2 py-0.5 rounded-full">
-                  Signal:{" "}
-                  {match.analysis.valueBet === "home"
-                    ? match.homeTeam
-                    : match.analysis.valueBet === "away"
-                    ? match.awayTeam
-                    : "Unentschieden"}
-                </span>
-              )}
             </div>
           </div>
 
@@ -325,7 +365,7 @@ export default async function MatchPage({ params }: PageProps) {
       {articles.length > 0 && (
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
           <h2 className="text-lg font-semibold text-white mb-4">
-            Aktuelle Nachrichten
+            Aktuelle Nachrichten & Verletzungsmeldungen
           </h2>
           <NewsWidget
             articles={articles.map((a) => ({

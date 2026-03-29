@@ -4,6 +4,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { MatchWithOdds, SPORT_LABELS } from "@/lib/types";
+import { useKombi } from "@/lib/kombi-context";
 
 interface MatchCardProps {
   match: MatchWithOdds;
@@ -39,6 +40,74 @@ function FormBadge({ result }: { result: string }) {
   );
 }
 
+function KombiButton({ match }: { match: MatchWithOdds }) {
+  const { addSelection, removeSelection, selections } = useKombi();
+  const existing = selections.find((s) => s.matchId === match.id);
+
+  const bestOdds = match.odds.reduce(
+    (best, o) => ({
+      home: Math.max(best.home, o.homeOdds),
+      draw: Math.max(best.draw, o.drawOdds ?? 0),
+      away: Math.max(best.away, o.awayOdds),
+    }),
+    { home: 0, draw: 0, away: 0 }
+  );
+
+  // Recommended selection (highest probability from analysis, fallback home)
+  const analysis = match.analysis;
+  let recKey: "home" | "draw" | "away" = "home";
+  let recOdds = bestOdds.home;
+  let recLabel = `${match.homeTeam} gewinnt`;
+
+  if (analysis) {
+    const candidates = [
+      { key: "home" as const, prob: analysis.homeWinProb, odds: bestOdds.home, label: `${match.homeTeam} gewinnt` },
+      { key: "draw" as const, prob: analysis.drawProb ?? 0, odds: bestOdds.draw, label: "Unentschieden" },
+      { key: "away" as const, prob: analysis.awayWinProb, odds: bestOdds.away, label: `${match.awayTeam} gewinnt` },
+    ].filter((c) => c.odds > 0);
+    if (candidates.length > 0) {
+      const best = candidates.reduce((b, c) => (c.prob > b.prob ? c : b), candidates[0]);
+      recKey = best.key;
+      recOdds = best.odds;
+      recLabel = best.label;
+    }
+  }
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (existing) {
+      removeSelection(match.id);
+    } else {
+      addSelection({
+        matchId: match.id,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        competition: match.competition,
+        selection: recKey,
+        odds: recOdds,
+        label: recLabel,
+      });
+    }
+  };
+
+  if (match.odds.length === 0 || match.status === "finished") return null;
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`text-xs px-2 py-1 rounded font-medium transition-colors ${
+        existing
+          ? "bg-orange-600 text-white"
+          : "bg-gray-700 text-gray-300 hover:bg-orange-700 hover:text-white"
+      }`}
+      title={existing ? "Aus Kombi entfernen" : `${recLabel} (${recOdds.toFixed(2)}) zum Kombi hinzufügen`}
+    >
+      {existing ? "✓ Kombi" : "+ Kombi"}
+    </button>
+  );
+}
+
 export default function MatchCard({ match }: MatchCardProps) {
   const bestOdds = match.odds.reduce(
     (best, odds) => ({
@@ -54,18 +123,19 @@ export default function MatchCard({ match }: MatchCardProps) {
   const isFinished = match.status === "finished";
 
   return (
-    <Link href={`/match/${match.id}`}>
-      <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-blue-500 transition-colors cursor-pointer">
-        {/* Header */}
-        <div className="flex justify-between items-start mb-3">
-          <div>
-            <span className="text-xs text-gray-400">{match.competition}</span>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs text-gray-500">
-                {SPORT_LABELS[match.sport] || match.sport}
-              </span>
-            </div>
+    <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 hover:border-blue-500 transition-colors">
+      {/* Header */}
+      <div className="flex justify-between items-start mb-3">
+        <Link href={`/match/${match.id}`} className="flex-1 min-w-0">
+          <span className="text-xs text-gray-400">{match.competition}</span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-xs text-gray-500">
+              {SPORT_LABELS[match.sport] || match.sport}
+            </span>
           </div>
+        </Link>
+        <div className="flex items-center gap-2">
+          <KombiButton match={match} />
           <div className="text-right">
             {isLive ? (
               <span className="inline-flex items-center gap-1 text-xs font-bold text-red-400">
@@ -81,8 +151,10 @@ export default function MatchCard({ match }: MatchCardProps) {
             )}
           </div>
         </div>
+      </div>
 
-        {/* Teams & Score */}
+      {/* Teams & Score */}
+      <Link href={`/match/${match.id}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex-1">
             <div className="text-white font-semibold">{match.homeTeam}</div>
@@ -130,16 +202,28 @@ export default function MatchCard({ match }: MatchCardProps) {
           </div>
         )}
 
+        {/* Tipp-Signal wenn Value Bet */}
+        {match.analysis?.isValueBet && match.analysis.valueBet && (
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs bg-green-900/60 text-green-300 px-2 py-0.5 rounded-full font-medium">
+              🎯 Value Bet
+            </span>
+            <span className="text-xs text-gray-400">
+              Tipp:{" "}
+              {match.analysis.valueBet === "home"
+                ? match.homeTeam
+                : match.analysis.valueBet === "away"
+                ? match.awayTeam
+                : "Unentschieden"}
+            </span>
+          </div>
+        )}
+
         {/* Analysis */}
         {match.analysis && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <StarRating score={match.analysis.confidenceScore} />
-              {match.analysis.isValueBet && (
-                <span className="text-xs bg-green-800 text-green-300 px-2 py-0.5 rounded-full font-medium">
-                  Value Bet
-                </span>
-              )}
             </div>
             <div className="text-xs text-gray-400">
               {match.analysis.homeWinProb.toFixed(0)}% /{" "}
@@ -148,8 +232,8 @@ export default function MatchCard({ match }: MatchCardProps) {
             </div>
           </div>
         )}
-      </div>
-    </Link>
+      </Link>
+    </div>
   );
 }
 
