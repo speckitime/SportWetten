@@ -5,6 +5,7 @@ import { startOfDay, endOfDay, addDays } from "date-fns";
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const sport = searchParams.get("sport") || undefined;
+  const competition = searchParams.get("competition") || undefined;
   const dateParam = searchParams.get("date") || "today";
 
   let dateStart: Date;
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
     where: {
       kickoff: { gte: dateStart, lte: dateEnd },
       ...(sport ? { sport } : {}),
+      ...(competition ? { competition: { contains: competition } } : {}),
     },
     include: {
       odds: true,

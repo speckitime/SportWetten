@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchAllSportsOdds, OddsGame } from "@/lib/apis/odds-api";
 import { fetchSportsNews } from "@/lib/apis/news-api";
 import { fetchNFLScores, fetchSoccerScores, mapESPNStatusToLocal } from "@/lib/apis/espn-api";
-import { fetchUpcomingBundesliga, fetchUpcomingHBL, fetchLiveBundesliga, estimateHBLOdds, OpenLigaMatch } from "@/lib/apis/openligadb-api";
+import { fetchUpcomingBundesliga, fetchUpcomingHBL, fetchUpcomingBBL, fetchLiveBundesliga, estimateHBLOdds, estimateBBLOdds, OpenLigaMatch } from "@/lib/apis/openligadb-api";
 import { analyzeAllMatches } from "@/lib/analysis/match-analyzer";
 
 const SPORT_MAP: Record<string, string> = {
@@ -41,6 +41,9 @@ export async function syncOddsAndMatches(): Promise<void> {
 
     // 3. OpenLigaDB für HBL (einzige kostenfreie Quelle mit echten HBL-Spielen)
     await syncOpenLigaHBL();
+
+    // 4. OpenLigaDB für BBL (Basketball Bundesliga)
+    await syncOpenLigaBBL();
 
     await analyzeAllMatches();
     console.log("[DataSync] Odds sync complete");
@@ -113,6 +116,21 @@ async function syncOpenLigaBundesliga(): Promise<void> {
   }
 }
 
+async function syncOpenLigaBBL(): Promise<void> {
+  try {
+    const matches = await fetchUpcomingBBL();
+    console.log(`[DataSync] OpenLigaDB BBL: ${matches.length} Spiele gefunden`);
+    if (matches.length > 0) {
+      console.log(`[DataSync] BBL Spiele: ${matches.slice(0, 3).map(m => `${m.team1.shortName || m.team1.teamName}-${m.team2.shortName || m.team2.teamName}`).join(", ")}...`);
+    }
+    for (const m of matches) {
+      await upsertOpenLigaMatch(m, "basketball", "Basketball Bundesliga (BBL)");
+    }
+  } catch (error) {
+    console.error("[DataSync] OpenLigaDB BBL sync failed:", error);
+  }
+}
+
 async function syncOpenLigaHBL(): Promise<void> {
   try {
     const matches = await fetchUpcomingHBL();
@@ -162,9 +180,11 @@ async function upsertOpenLigaMatch(
     },
   });
 
-  // For HBL: create estimated odds so the match can be analyzed
-  if (sport === "handball" && !isFinished) {
-    const estimated = estimateHBLOdds(m.team1.teamName, m.team2.teamName);
+  // Für HBL + BBL: geschätzte Quoten erstellen damit die Analyse läuft
+  if ((sport === "handball" || sport === "basketball") && !isFinished) {
+    const estimated = sport === "handball"
+      ? estimateHBLOdds(m.team1.teamName, m.team2.teamName)
+      : { ...estimateBBLOdds(m.team1.teamName, m.team2.teamName), drawOdds: null };
     await prisma.odds.upsert({
       where: { matchId_bookmaker: { matchId: match.id, bookmaker: "estimate" } },
       create: {
