@@ -93,9 +93,8 @@ export async function fetchAllSportsOdds(): Promise<OddsGame[]> {
     allOdds.push(...odds);
   }
 
-  // Always include mock handball + basketball (BBL) regardless of API key
-  allOdds.push(...getMockOdds("handball"));
-  allOdds.push(...getMockOdds("bbl"));
+  // Handball + BBL kommen ausschließlich von OpenLigaDB (echte Daten)
+  // Kein Mock-Handball/BBL mehr — falsche Paarungen würden auf Tipico nicht existieren
 
   return allOdds;
 }
@@ -109,6 +108,9 @@ function daysFromNow(d: number, hour = 18, minute = 0): string {
 }
 
 function getMockOdds(sport: string): OddsGame[] {
+  // Handball und BBL: kein Mock — nur OpenLigaDB (echte Spielpläne)
+  if (sport === "handball" || sport === "bbl" || sport === "basketball") return [];
+
   const mockGames: Record<string, OddsGame[]> = {
     football: [
       createMockGame("mock-fb-1", "soccer_germany_bundesliga", "1. Bundesliga",
@@ -207,10 +209,7 @@ function getMockOdds(sport: string): OddsGame[] {
         [{ bookmaker: "tipico", home: 1.45, draw: undefined, away: 2.75 }]),
     ],
 
-    nfl: [
-      // NFL off-season (Super Bowl Feb 2026, next season Sep 2026)
-      // Show preseason/draft news placeholder — no games
-    ],
+    nfl: [], // Off-season (Super Bowl Feb 2026, neue Saison ab Sep 2026)
   };
 
   return mockGames[sport] ?? [];

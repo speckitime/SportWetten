@@ -21,17 +21,25 @@ export async function syncOddsAndMatches(): Promise<void> {
   console.log("[DataSync] Fetching odds from all sports...");
 
   try {
-    // 1. Odds API for football/basketball/nfl
+    // 0. Alte Mock-Daten aus DB entfernen (verhindert falsche Paarungen auf Tipico)
+    const deleted = await prisma.match.deleteMany({
+      where: { externalId: { startsWith: "mock-" } },
+    });
+    if (deleted.count > 0) {
+      console.log(`[DataSync] Removed ${deleted.count} mock matches from DB`);
+    }
+
+    // 1. Odds API for football/basketball/nfl (echte Quoten)
     const allOdds = await fetchAllSportsOdds();
     console.log(`[DataSync] Received ${allOdds.length} games from odds API`);
     for (const game of allOdds) {
       await upsertMatchFromOdds(game);
     }
 
-    // 2. OpenLigaDB for Bundesliga (more complete data)
+    // 2. OpenLigaDB für Bundesliga (vollständiger Spielplan)
     await syncOpenLigaBundesliga();
 
-    // 3. OpenLigaDB for HBL (only free source with HBL data)
+    // 3. OpenLigaDB für HBL (einzige kostenfreie Quelle mit echten HBL-Spielen)
     await syncOpenLigaHBL();
 
     await analyzeAllMatches();
@@ -93,7 +101,10 @@ async function upsertMatchFromOdds(game: OddsGame): Promise<void> {
 async function syncOpenLigaBundesliga(): Promise<void> {
   try {
     const matches = await fetchUpcomingBundesliga();
-    console.log(`[DataSync] OpenLigaDB Bundesliga: ${matches.length} Spiele`);
+    console.log(`[DataSync] OpenLigaDB Bundesliga: ${matches.length} Spiele gefunden`);
+    if (matches.length > 0) {
+      console.log(`[DataSync] BL1 Spiele: ${matches.slice(0, 3).map(m => `${m.team1.shortName}-${m.team2.shortName}`).join(", ")}...`);
+    }
     for (const m of matches) {
       await upsertOpenLigaMatch(m, "football", "1. Bundesliga");
     }
@@ -105,7 +116,10 @@ async function syncOpenLigaBundesliga(): Promise<void> {
 async function syncOpenLigaHBL(): Promise<void> {
   try {
     const matches = await fetchUpcomingHBL();
-    console.log(`[DataSync] OpenLigaDB HBL: ${matches.length} Spiele`);
+    console.log(`[DataSync] OpenLigaDB HBL: ${matches.length} Spiele gefunden`);
+    if (matches.length > 0) {
+      console.log(`[DataSync] HBL Spiele: ${matches.slice(0, 3).map(m => `${m.team1.shortName || m.team1.teamName}-${m.team2.shortName || m.team2.teamName}`).join(", ")}...`);
+    }
     for (const m of matches) {
       await upsertOpenLigaMatch(m, "handball", "Handball Bundesliga (HBL)");
     }
