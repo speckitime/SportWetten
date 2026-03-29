@@ -52,12 +52,15 @@ cd SportWetten
 npm install
 ```
 
+> **Hinweis:** Warnungen wie `deprecated prebuild-install` oder `11 vulnerabilities` beim `npm install` sind normal und können ignoriert werden. Sie stammen aus indirekten Abhängigkeiten und beeinträchtigen den Betrieb nicht.
+
 ### 3. Umgebungsvariablen konfigurieren
 
 ```bash
-cp .env.example .env
 nano .env
 ```
+
+Folgenden Inhalt einfügen (`Strg+O` speichern, `Strg+X` beenden):
 
 Inhalt der `.env` Datei:
 
