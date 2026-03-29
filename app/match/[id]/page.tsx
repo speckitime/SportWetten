@@ -8,6 +8,7 @@ import AnalysisChart from "@/components/AnalysisChart";
 import NewsWidget from "@/components/NewsWidget";
 import TippEmpfehlung from "@/components/TippEmpfehlung";
 import InjuryWidget from "@/components/InjuryWidget";
+import TipicoButton from "@/components/TipicoButton";
 import { SPORT_LABELS } from "@/lib/types";
 
 interface PageProps {
@@ -56,8 +57,6 @@ export default async function MatchPage({ params }: PageProps) {
   const bestAwayOdds = match.odds.length > 0 ? Math.max(...match.odds.map((o) => o.awayOdds)) : null;
   const drawOddsArr = match.odds.filter((o) => o.drawOdds).map((o) => o.drawOdds as number);
   const bestDrawOdds = drawOddsArr.length > 0 ? Math.max(...drawOddsArr) : null;
-
-  const tipicoUrl = `https://www.tipico.de/de/live-wetten/`;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
@@ -138,26 +137,56 @@ export default async function MatchPage({ params }: PageProps) {
 
         {/* Quick odds */}
         {bestHomeOdds && bestAwayOdds && !isFinished && (
-          <div className="mt-4 flex justify-center gap-4">
-            <div className="bg-gray-700 rounded-lg px-4 py-2 text-center">
-              <div className="text-xs text-gray-400">Beste 1-Quote</div>
-              <div className="text-green-400 font-bold text-lg">
-                {bestHomeOdds.toFixed(2)}
-              </div>
-            </div>
-            {bestDrawOdds && (
+          <div className="mt-4 space-y-3">
+            <div className="flex justify-center gap-4">
               <div className="bg-gray-700 rounded-lg px-4 py-2 text-center">
-                <div className="text-xs text-gray-400">Beste X-Quote</div>
-                <div className="text-yellow-400 font-bold text-lg">
-                  {bestDrawOdds.toFixed(2)}
+                <div className="text-xs text-gray-400">Beste 1-Quote</div>
+                <div className="text-green-400 font-bold text-lg">
+                  {bestHomeOdds.toFixed(2)}
                 </div>
               </div>
-            )}
-            <div className="bg-gray-700 rounded-lg px-4 py-2 text-center">
-              <div className="text-xs text-gray-400">Beste 2-Quote</div>
-              <div className="text-blue-400 font-bold text-lg">
-                {bestAwayOdds.toFixed(2)}
+              {bestDrawOdds && (
+                <div className="bg-gray-700 rounded-lg px-4 py-2 text-center">
+                  <div className="text-xs text-gray-400">Beste X-Quote</div>
+                  <div className="text-yellow-400 font-bold text-lg">
+                    {bestDrawOdds.toFixed(2)}
+                  </div>
+                </div>
+              )}
+              <div className="bg-gray-700 rounded-lg px-4 py-2 text-center">
+                <div className="text-xs text-gray-400">Beste 2-Quote</div>
+                <div className="text-blue-400 font-bold text-lg">
+                  {bestAwayOdds.toFixed(2)}
+                </div>
               </div>
+            </div>
+            {/* Tipico CTA */}
+            <div className="flex justify-center">
+              <TipicoButton
+                sport={match.sport}
+                competition={match.competition}
+                homeTeam={match.homeTeam}
+                awayTeam={match.awayTeam}
+                tipp={
+                  match.analysis?.valueBet
+                    ? {
+                        selection: match.analysis.valueBet as "home" | "draw" | "away",
+                        label:
+                          match.analysis.valueBet === "home"
+                            ? `${match.homeTeam} gewinnt`
+                            : match.analysis.valueBet === "away"
+                            ? `${match.awayTeam} gewinnt`
+                            : "Unentschieden",
+                        odds:
+                          match.analysis.valueBet === "home"
+                            ? bestHomeOdds
+                            : match.analysis.valueBet === "away"
+                            ? bestAwayOdds
+                            : bestDrawOdds,
+                      }
+                    : null
+                }
+              />
             </div>
           </div>
         )}
@@ -167,6 +196,8 @@ export default async function MatchPage({ params }: PageProps) {
       {match.analysis && !isFinished && (
         <TippEmpfehlung
           matchId={match.id}
+          sport={match.sport}
+          competition={match.competition}
           homeTeam={match.homeTeam}
           awayTeam={match.awayTeam}
           analysis={{
@@ -281,14 +312,31 @@ export default async function MatchPage({ params }: PageProps) {
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Quoten-Vergleich</h2>
-          <a
-            href={tipicoUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded transition-colors"
-          >
-            Zu Tipico →
-          </a>
+          <TipicoButton
+            sport={match.sport}
+            competition={match.competition}
+            homeTeam={match.homeTeam}
+            awayTeam={match.awayTeam}
+            tipp={
+              match.analysis?.valueBet
+                ? {
+                    selection: match.analysis.valueBet as "home" | "draw" | "away",
+                    label:
+                      match.analysis.valueBet === "home"
+                        ? `${match.homeTeam} gewinnt`
+                        : match.analysis.valueBet === "away"
+                        ? `${match.awayTeam} gewinnt`
+                        : "Unentschieden",
+                    odds:
+                      match.analysis.valueBet === "home"
+                        ? bestHomeOdds
+                        : match.analysis.valueBet === "away"
+                        ? bestAwayOdds
+                        : bestDrawOdds,
+                  }
+                : null
+            }
+          />
         </div>
         <OddsTable
           odds={match.odds.map((o) => ({
